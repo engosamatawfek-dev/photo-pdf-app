@@ -19,13 +19,13 @@ from pdf_engine import generate_pdf
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Photo PDF Maker",
+    page_title="PicPDF",
     page_icon="📄",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
 
-st.title("📄 Photo PDF Maker")
+st.title("📄 PicPDF")
 st.caption("Upload photos → rotate if needed → choose layout → download PDF")
 
 # ── Session state defaults ────────────────────────────────────────────────────
