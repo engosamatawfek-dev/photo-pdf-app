@@ -1,8 +1,7 @@
 """
 Photo PDF Maker — Streamlit UI
 
-Upload photos from your phone, rotate if needed, and download as a PDF.
-Layout is always Auto (grid chosen based on photo count). Page: A4, padding: 5mm.
+Upload photos from your phone, rotate if needed, choose a layout, and download as a PDF.
 
 Evidence: Streamlit 1.58.0 API
 Source: https://docs.streamlit.io/develop/api-reference
@@ -15,7 +14,7 @@ import streamlit as st
 from PIL import Image
 
 from image_processor import create_preview, load_and_validate, resize_to_max
-from layout_calculator import MAX_PHOTOS, resolve_layout
+from layout_calculator import MAX_PHOTOS, PRESET_NAMES, resolve_layout
 from pdf_engine import generate_pdf
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -27,7 +26,7 @@ st.set_page_config(
 )
 
 st.title("📄 PicPDF")
-st.caption("Upload photos → rotate if needed → download PDF")
+st.caption("Upload photos → rotate if needed → choose layout → download PDF")
 
 # Larger, coloured rotate buttons (only targets buttons inside column cells)
 st.markdown("""
@@ -38,10 +37,6 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
-
-# ── Constants ─────────────────────────────────────────────────────────────────
-PAGE_SIZE = "A4"
-PADDING_MM = 5.0
 
 # ── Session state defaults ────────────────────────────────────────────────────
 if "images" not in st.session_state:
@@ -132,40 +127,85 @@ if uploaded_files:
                         _reset_output()
                         st.rerun()
 
-# ── STEP 2 — Preview ─────────────────────────────────────────────────────────
+# ── STEP 2 — Layout ───────────────────────────────────────────────────────────
 if st.session_state.images:
-    image_count = len(st.session_state.images)
-    layout = resolve_layout("Auto", image_count)
-
     st.divider()
-    st.subheader("2 · Preview")
+    st.subheader("2 · Choose Layout")
+
+    col_layout, col_options = st.columns([2, 1])
+
+    with col_layout:
+        preset = st.radio(
+            "Layout preset",
+            options=PRESET_NAMES,
+            index=0,
+            horizontal=False,
+            on_change=_reset_output,
+        )
+
+    with col_options:
+        page_size = st.selectbox(
+            "Page size",
+            options=["A4", "Letter"],
+            index=0,
+            on_change=_reset_output,
+        )
+        padding_mm = st.slider(
+            "Padding (mm)",
+            min_value=0,
+            max_value=20,
+            value=5,
+            step=1,
+            on_change=_reset_output,
+        )
+
+    custom_cols, custom_rows = 2, 3
+    if preset == "Custom":
+        cc, cr = st.columns(2)
+        with cc:
+            custom_cols = st.number_input("Columns", min_value=1, max_value=5, value=2, on_change=_reset_output)
+        with cr:
+            custom_rows = st.number_input("Rows", min_value=1, max_value=6, value=3, on_change=_reset_output)
+
+    image_count = len(st.session_state.images)
+    layout = resolve_layout(preset, image_count, int(custom_cols), int(custom_rows))
+
+    if image_count > layout.capacity:
+        st.warning(
+            f"This layout fits {layout.capacity} photos. "
+            f"Your last {image_count - layout.capacity} photo(s) will not appear."
+        )
+
+# ── STEP 3 — Preview ─────────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("3 · Preview")
 
     if st.session_state.preview_img is None:
         with st.spinner("Generating preview…"):
             st.session_state.preview_img = create_preview(
                 _rotated_images(),
                 layout,
-                PAGE_SIZE,
-                PADDING_MM,
+                page_size,
+                float(padding_mm),
             )
 
     st.image(
         st.session_state.preview_img,
-        caption=f"{layout.name} · {PAGE_SIZE}",
+        caption=f"{layout.name} · {page_size} · {padding_mm}mm padding",
         width="stretch",
     )
 
-# ── STEP 3 — Generate & Download ─────────────────────────────────────────────
+# ── STEP 4 — Generate & Download ─────────────────────────────────────────────
     st.divider()
-    st.subheader("3 · Download PDF")
+    st.subheader("4 · Download PDF")
 
     if st.button("Generate PDF", type="primary", width="stretch"):
         with st.spinner("Building PDF…"):
             st.session_state.pdf_bytes = generate_pdf(
                 _rotated_images(),
                 layout,
-                PAGE_SIZE,
-                PADDING_MM,
+                page_size,
+                float(padding_mm),
             )
 
     if st.session_state.pdf_bytes:
