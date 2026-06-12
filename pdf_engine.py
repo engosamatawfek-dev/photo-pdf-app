@@ -15,7 +15,7 @@ from layout_calculator import (
     GridLayout,
     PAGE_SIZES,
     calculate_cell_rect,
-    fit_image_in_cell,
+    cover_crop_box,
 )
 
 
@@ -27,10 +27,8 @@ def generate_pdf(
 ) -> bytes:
     """
     Generate a single-page PDF with images arranged in the given grid.
-
-    Images beyond layout.capacity are silently ignored —
-    the caller is responsible for showing the user a warning via st.warning().
-
+    Each image is center-cropped to fill its cell completely (cover fit, no white space).
+    Images beyond layout.capacity are silently ignored.
     Returns raw PDF bytes ready for st.download_button(data=...).
     """
     page_w_mm, page_h_mm = PAGE_SIZES[page_size]
@@ -51,13 +49,15 @@ def generate_pdf(
             layout.cols, layout.rows,
             padding_mm, col, row,
         )
-        draw = fit_image_in_cell(img.width, img.height, cell)
 
-        # Save PIL Image to in-memory JPEG buffer — fpdf2 accepts BytesIO directly
+        # Center-crop image to match cell aspect ratio (cover fit — no white space)
+        crop_box = cover_crop_box(img.width, img.height, cell)
+        cropped = img.crop(crop_box)
+
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=90)
+        cropped.save(buf, format="JPEG", quality=90)
         buf.seek(0)
 
-        pdf.image(buf, x=draw.x_mm, y=draw.y_mm, w=draw.w_mm, h=draw.h_mm)
+        pdf.image(buf, x=cell.x_mm, y=cell.y_mm, w=cell.w_mm, h=cell.h_mm)
 
     return bytes(pdf.output())

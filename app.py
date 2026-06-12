@@ -94,8 +94,8 @@ if uploaded_files:
                 st.error(err)
         if new_images:
             st.session_state.images = new_images
-            # Auto-rotate landscape photos to portrait; user can still adjust with ↻
-            st.session_state.rotations = [90 if img.width > img.height else 0 for img in new_images]
+            # Keep original orientation — EXIF already applied during load
+            st.session_state.rotations = [0] * len(new_images)
             st.session_state.file_sig = current_sig
             _reset_output()
 

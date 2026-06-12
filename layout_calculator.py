@@ -157,3 +157,25 @@ def fit_image_in_cell(
         draw_y = cell.y_mm
 
     return DrawRect(x_mm=draw_x, y_mm=draw_y, w_mm=draw_w, h_mm=draw_h)
+
+
+def cover_crop_box(img_w_px: int, img_h_px: int, cell: CellRect) -> tuple[int, int, int, int]:
+    """
+    Return a (left, top, right, bottom) pixel crop box that makes the image
+    exactly match the cell aspect ratio — center crop, no white space (cover fit).
+    """
+    img_ar = img_w_px / img_h_px
+    cell_ar = cell.w_mm / cell.h_mm
+
+    if img_ar > cell_ar:
+        # Image wider than cell — crop left and right
+        target_w = int(img_h_px * cell_ar)
+        left = (img_w_px - target_w) // 2
+        return (left, 0, left + target_w, img_h_px)
+    elif img_ar < cell_ar:
+        # Image taller than cell — crop top and bottom
+        target_h = int(img_w_px / cell_ar)
+        top = (img_h_px - target_h) // 2
+        return (0, top, img_w_px, top + target_h)
+    else:
+        return (0, 0, img_w_px, img_h_px)
