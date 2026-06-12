@@ -79,11 +79,12 @@ def create_preview(
     layout: GridLayout,
     page_size: str,
     padding_mm: float,
+    photo_scale: float = 1.0,
     preview_width_px: int = 640,
 ) -> Image.Image:
     """
     Render a low-resolution composite image of the PDF layout for st.image() preview.
-    Scale factor maps mm → pixels: scale = preview_width_px / page_w_mm.
+    photo_scale (0.5–1.0): 1.0 = fill cell, <1.0 = shrink photo from center.
     Returns a white RGB PIL Image.
     """
     page_w_mm, page_h_mm = PAGE_SIZES[page_size]
@@ -104,7 +105,18 @@ def create_preview(
             layout.cols, layout.rows,
             padding_mm, col, row,
         )
-        # Cover crop: trim to cell aspect ratio, then scale to cell pixels
+
+        # Shrink cell from center when photo_scale < 1.0
+        if photo_scale < 1.0:
+            inset_w = cell.w_mm * (1 - photo_scale) / 2
+            inset_h = cell.h_mm * (1 - photo_scale) / 2
+            cell = CellRect(
+                x_mm=cell.x_mm + inset_w,
+                y_mm=cell.y_mm + inset_h,
+                w_mm=cell.w_mm * photo_scale,
+                h_mm=cell.h_mm * photo_scale,
+            )
+
         crop_box = cover_crop_box(img.width, img.height, cell)
         cropped = img.crop(crop_box)
 

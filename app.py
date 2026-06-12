@@ -159,6 +159,14 @@ if st.session_state.images:
             step=1,
             on_change=_reset_output,
         )
+        photo_scale = st.slider(
+            "Photo size (%)",
+            min_value=50,
+            max_value=100,
+            value=100,
+            step=5,
+            on_change=_reset_output,
+        ) / 100
 
     custom_cols, custom_rows = 2, 3
     if preset == "Custom":
@@ -188,6 +196,7 @@ if st.session_state.images:
                 layout,
                 page_size,
                 float(padding_mm),
+                photo_scale,
             )
 
     st.image(
@@ -207,6 +216,7 @@ if st.session_state.images:
                 layout,
                 page_size,
                 float(padding_mm),
+                photo_scale,
             )
 
     if st.session_state.pdf_bytes:

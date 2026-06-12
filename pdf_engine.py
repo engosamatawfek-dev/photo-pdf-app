@@ -12,6 +12,7 @@ from fpdf import FPDF
 from PIL import Image
 
 from layout_calculator import (
+    CellRect,
     GridLayout,
     PAGE_SIZES,
     calculate_cell_rect,
@@ -24,10 +25,12 @@ def generate_pdf(
     layout: GridLayout,
     page_size: str = "A4",
     padding_mm: float = 5.0,
+    photo_scale: float = 1.0,
 ) -> bytes:
     """
     Generate a single-page PDF with images arranged in the given grid.
-    Each image is center-cropped to fill its cell completely (cover fit, no white space).
+    photo_scale (0.5–1.0): 1.0 = fill cell completely, <1.0 = shrink photo from center.
+    Each image is center-cropped to match its (scaled) cell aspect ratio.
     Images beyond layout.capacity are silently ignored.
     Returns raw PDF bytes ready for st.download_button(data=...).
     """
@@ -50,7 +53,17 @@ def generate_pdf(
             padding_mm, col, row,
         )
 
-        # Center-crop image to match cell aspect ratio (cover fit — no white space)
+        # Shrink cell from center when photo_scale < 1.0
+        if photo_scale < 1.0:
+            inset_w = cell.w_mm * (1 - photo_scale) / 2
+            inset_h = cell.h_mm * (1 - photo_scale) / 2
+            cell = CellRect(
+                x_mm=cell.x_mm + inset_w,
+                y_mm=cell.y_mm + inset_h,
+                w_mm=cell.w_mm * photo_scale,
+                h_mm=cell.h_mm * photo_scale,
+            )
+
         crop_box = cover_crop_box(img.width, img.height, cell)
         cropped = img.crop(crop_box)
 
