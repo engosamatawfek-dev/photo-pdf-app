@@ -28,6 +28,16 @@ st.set_page_config(
 st.title("📄 PicPDF")
 st.caption("Upload photos → rotate if needed → choose layout → download PDF")
 
+# Larger, coloured rotate buttons (only targets buttons inside column cells)
+st.markdown("""
+<style>
+[data-testid="column"] [data-testid="stBaseButton-primary"] p {
+    font-size: 1.6rem !important;
+    line-height: 1.1 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── Session state defaults ────────────────────────────────────────────────────
 if "images" not in st.session_state:
     st.session_state.images: list[Image.Image] = []
@@ -112,7 +122,7 @@ if uploaded_files:
                         else st.session_state.images[img_idx]
                     )
                     st.image(display, width="stretch")
-                    if st.button("↻", key=f"rotate_{img_idx}", width="stretch"):
+                    if st.button("↻", key=f"rotate_{img_idx}", type="primary", width="stretch"):
                         st.session_state.rotations[img_idx] = (angle + 90) % 360
                         _reset_output()
                         st.rerun()
