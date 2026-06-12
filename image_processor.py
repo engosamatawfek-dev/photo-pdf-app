@@ -6,11 +6,19 @@ Source: https://pillow.readthedocs.io/en/stable/reference/Image.html
 Verified: 2026-06-12
 
 Pillow >= 12.2.0 required — patches CVE-2026-25990, CVE-2026-40192, CVE-2026-42308.
+pillow-heif registered at import time to add HEIC/HEIF (iPhone) support.
 """
 
 import io
 
 from PIL import Image
+
+# Register HEIC/HEIF support if pillow-heif is installed
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass
 
 from layout_calculator import (
     CellRect,
@@ -20,34 +28,25 @@ from layout_calculator import (
     fit_image_in_cell,
 )
 
-ACCEPTED_FORMATS = {"JPEG", "PNG", "WEBP"}
 MAX_DIMENSION_PX = 1920
 
 
 def load_and_validate(file_bytes: bytes, filename: str) -> Image.Image:
     """
-    Load image from bytes, validate format, convert to RGB.
-    Alpha channel is dropped (PDF background is white — transparent areas become white).
+    Load image from bytes, convert to RGB.
+    Accepts any format Pillow can open (JPEG, PNG, WEBP, HEIC, BMP, GIF, TIFF, …).
+    Alpha channel is dropped — transparent areas become white (PDF background).
     Raises ValueError with a user-friendly message on bad input.
     """
     try:
-        img = Image.open(io.BytesIO(file_bytes))
-        img.verify()  # Detect truncated/corrupt files early
+        buf = io.BytesIO(file_bytes)
+        img = Image.open(buf)
+        img.load()  # Force-decode to catch truncated/corrupt files
     except Exception:
         raise ValueError(f"'{filename}' could not be read. Is it a valid image file?")
 
-    # Re-open after verify() (verify() leaves file unusable)
-    img = Image.open(io.BytesIO(file_bytes))
-
-    fmt = img.format or ""
-    if fmt.upper() not in ACCEPTED_FORMATS:
-        raise ValueError(
-            f"'{filename}' has unsupported format '{fmt}'. "
-            f"Please use JPEG, PNG, or WEBP."
-        )
-
     if img.mode != "RGB":
-        # Paste onto white background to handle transparency
+        # Paste onto white background to handle transparency (RGBA, LA, P modes)
         rgb = Image.new("RGB", img.size, (255, 255, 255))
         if img.mode in ("RGBA", "LA"):
             rgb.paste(img, mask=img.split()[-1])
@@ -104,7 +103,6 @@ def create_preview(
         )
         draw = fit_image_in_cell(img.width, img.height, cell)
 
-        # Convert mm coords to pixels
         px_x = int(draw.x_mm * scale)
         px_y = int(draw.y_mm * scale)
         px_w = max(1, int(draw.w_mm * scale))

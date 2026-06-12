@@ -74,7 +74,7 @@ st.subheader("1 · Upload Photos")
 
 uploaded_files = st.file_uploader(
     "Select photos from your gallery",
-    type=["jpg", "jpeg", "png", "webp"],
+    type=["jpg", "jpeg", "png", "webp", "heic", "heif", "bmp", "tiff", "tif", "gif"],
     accept_multiple_files=True,
     help="Tap to open your phone gallery. You can select multiple photos at once.",
     on_change=_reset_output,
