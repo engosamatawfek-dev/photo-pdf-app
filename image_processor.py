@@ -11,7 +11,7 @@ pillow-heif registered at import time to add HEIC/HEIF (iPhone) support.
 
 import io
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 # Register HEIC/HEIF support if pillow-heif is installed
 try:
@@ -44,6 +44,9 @@ def load_and_validate(file_bytes: bytes, filename: str) -> Image.Image:
         img.load()  # Force-decode to catch truncated/corrupt files
     except Exception:
         raise ValueError(f"'{filename}' could not be read. Is it a valid image file?")
+
+    # Apply EXIF orientation so phone photos (which store rotation in metadata) appear correctly
+    img = ImageOps.exif_transpose(img)
 
     if img.mode != "RGB":
         # Paste onto white background to handle transparency (RGBA, LA, P modes)
