@@ -22,7 +22,7 @@ except ImportError:
 from layout_calculator import (
     GridLayout,
     PAGE_SIZES,
-    calculate_cell_rect_weighted,
+    calculate_cell_rect,
     fit_image_in_cell,
 )
 
@@ -76,14 +76,10 @@ def create_preview(
     page_size: str,
     padding_mm: float,
     preview_width_px: int = 640,
-    col_weights: list[float] | None = None,
-    row_weights: list[float] | None = None,
 ) -> Image.Image:
     """
     Render a composite image of the PDF layout for st.image() preview.
-
     Images are never cropped — contain fit is always used.
-    col_weights / row_weights control proportional slot sizes.
     Returns a white RGB PIL Image.
     """
     page_w_mm, page_h_mm = PAGE_SIZES[page_size]
@@ -91,19 +87,13 @@ def create_preview(
     canvas_w = int(page_w_mm * scale)
     canvas_h = int(page_h_mm * scale)
 
-    cw = col_weights if col_weights else [1.0] * layout.cols
-    rw = row_weights if row_weights else [1.0] * layout.rows
-
     canvas = Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
 
-    photos_to_draw = images[: layout.capacity]
-
-    for idx, img in enumerate(photos_to_draw):
+    for idx, img in enumerate(images[: layout.capacity]):
         col = idx % layout.cols
         row = idx // layout.cols
-
-        cell = calculate_cell_rect_weighted(
-            page_w_mm, page_h_mm, cw, rw, padding_mm, col, row
+        cell = calculate_cell_rect(
+            page_w_mm, page_h_mm, layout.cols, layout.rows, padding_mm, col, row
         )
         draw = fit_image_in_cell(img.width, img.height, cell)
 

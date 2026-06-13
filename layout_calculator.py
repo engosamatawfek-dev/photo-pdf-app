@@ -77,43 +77,27 @@ def resolve_layout(preset_name: str) -> GridLayout:
     return GridLayout(preset_name, cols, rows)
 
 
-def calculate_cell_rect_weighted(
+def calculate_cell_rect(
     page_w_mm: float,
     page_h_mm: float,
-    col_weights: list[float],
-    row_weights: list[float],
+    cols: int,
+    rows: int,
     padding_mm: float,
     col: int,
     row: int,
 ) -> CellRect:
     """
-    Bounding box of one grid cell using proportional column/row weights.
+    Bounding box of one grid cell in mm — equal-size cells.
 
-    Available width/height is divided proportionally to the weights list.
     Padding is uniform: outer edges + between cells.
-    A higher weight means a wider column or taller row; neighbors shrink
-    automatically because the total space is fixed.
+    cell_w = (page_w - (cols+1)*padding) / cols
+    cell_h = (page_h - (rows+1)*padding) / rows
     """
-    cols = len(col_weights)
-    rows = len(row_weights)
-
-    avail_w = page_w_mm - (cols + 1) * padding_mm
-    avail_h = page_h_mm - (rows + 1) * padding_mm
-
-    total_cw = sum(col_weights)
-    total_rh = sum(row_weights)
-
-    x = padding_mm
-    for i in range(col):
-        x += col_weights[i] / total_cw * avail_w + padding_mm
-    w = col_weights[col] / total_cw * avail_w
-
-    y = padding_mm
-    for i in range(row):
-        y += row_weights[i] / total_rh * avail_h + padding_mm
-    h = row_weights[row] / total_rh * avail_h
-
-    return CellRect(x_mm=x, y_mm=y, w_mm=w, h_mm=h)
+    cell_w = (page_w_mm - (cols + 1) * padding_mm) / cols
+    cell_h = (page_h_mm - (rows + 1) * padding_mm) / rows
+    cell_x = padding_mm + col * (cell_w + padding_mm)
+    cell_y = padding_mm + row * (cell_h + padding_mm)
+    return CellRect(x_mm=cell_x, y_mm=cell_y, w_mm=cell_w, h_mm=cell_h)
 
 
 def fit_image_in_cell(

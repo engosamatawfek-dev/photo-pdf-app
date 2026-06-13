@@ -2,7 +2,7 @@
 Photo PDF Maker — Streamlit UI
 
 Upload photos from your phone, rotate if needed, choose a grid layout,
-resize slots, and download as a PDF.
+and download as a PDF. Images are never cropped.
 
 Evidence: Streamlit 1.58.0 API
 Source: https://docs.streamlit.io/develop/api-reference
@@ -27,7 +27,7 @@ st.set_page_config(
 )
 
 st.title("📄 PicPDF")
-st.caption("Upload photos → rotate if needed → choose grid → resize slots → download PDF")
+st.caption("Upload photos → rotate if needed → choose grid → download PDF")
 
 st.markdown("""
 <style>
@@ -49,8 +49,6 @@ if "pdf_bytes" not in st.session_state:
     st.session_state.pdf_bytes: bytes | None = None
 if "preview_img" not in st.session_state:
     st.session_state.preview_img: Image.Image | None = None
-if "last_preset" not in st.session_state:
-    st.session_state.last_preset: str = ""
 
 
 def _reset_output() -> None:
@@ -120,10 +118,10 @@ if uploaded_files:
                         _reset_output()
                         st.rerun()
 
-# ── STEP 2 — Layout & slot sizing ────────────────────────────────────────────
+# ── STEP 2 — Layout ───────────────────────────────────────────────────────────
 if st.session_state.images:
     st.divider()
-    st.subheader("2 · Choose Grid & Resize Slots")
+    st.subheader("2 · Choose Grid")
 
     col_layout, col_options = st.columns([2, 1])
 
@@ -160,50 +158,6 @@ if st.session_state.images:
             f"Your last {len(st.session_state.images) - layout.capacity} photo(s) will not appear."
         )
 
-    # Reset slot-size sliders whenever the preset changes
-    if preset != st.session_state.last_preset:
-        for i in range(layout.cols):
-            st.session_state[f"cw_{i}"] = 5
-        for i in range(layout.rows):
-            st.session_state[f"rh_{i}"] = 5
-        st.session_state.last_preset = preset
-
-    # Column-width sliders (one per column)
-    col_weights: list[float] = []
-    if layout.cols > 1:
-        st.caption("Column widths — increase one column and the others shrink automatically.")
-        slider_cols = st.columns(layout.cols)
-        for i, sc in enumerate(slider_cols):
-            with sc:
-                val = st.slider(
-                    f"Col {i + 1}",
-                    min_value=1,
-                    max_value=10,
-                    value=5,
-                    key=f"cw_{i}",
-                    on_change=_reset_output,
-                )
-                col_weights.append(float(val))
-    else:
-        col_weights = [1.0]
-
-    # Row-height sliders (one per row)
-    row_weights: list[float] = []
-    if layout.rows > 1:
-        st.caption("Row heights — increase one row and the others shrink automatically.")
-        for i in range(layout.rows):
-            val = st.slider(
-                f"Row {i + 1}",
-                min_value=1,
-                max_value=10,
-                value=5,
-                key=f"rh_{i}",
-                on_change=_reset_output,
-            )
-            row_weights.append(float(val))
-    else:
-        row_weights = [1.0]
-
 # ── STEP 3 — Preview ─────────────────────────────────────────────────────────
     st.divider()
     st.subheader("3 · Preview")
@@ -215,8 +169,6 @@ if st.session_state.images:
                 layout,
                 page_size,
                 float(padding_mm),
-                col_weights=col_weights,
-                row_weights=row_weights,
             )
 
     st.image(
@@ -236,8 +188,6 @@ if st.session_state.images:
                 layout,
                 page_size,
                 float(padding_mm),
-                col_weights=col_weights,
-                row_weights=row_weights,
             )
 
     if st.session_state.pdf_bytes:
