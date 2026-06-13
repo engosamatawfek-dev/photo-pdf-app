@@ -114,6 +114,7 @@ def calculate_cell_rect(
     padding_mm: float,
     col: int,
     row: int,
+    col_span: int = 1,
 ) -> CellRect:
     """
     Bounding box of one grid cell in mm.
@@ -123,12 +124,14 @@ def calculate_cell_rect(
     cell_h = (page_h - (rows+1)*padding) / rows
     cell_x = padding + col*(cell_w + padding)
     cell_y = padding + row*(cell_h + padding)
+    col_span > 1: cell stretches across that many columns (padding between them absorbed).
     """
     cell_w = (page_w_mm - (cols + 1) * padding_mm) / cols
     cell_h = (page_h_mm - (rows + 1) * padding_mm) / rows
     cell_x = padding_mm + col * (cell_w + padding_mm)
     cell_y = padding_mm + row * (cell_h + padding_mm)
-    return CellRect(x_mm=cell_x, y_mm=cell_y, w_mm=cell_w, h_mm=cell_h)
+    actual_w = cell_w * col_span + padding_mm * (col_span - 1)
+    return CellRect(x_mm=cell_x, y_mm=cell_y, w_mm=actual_w, h_mm=cell_h)
 
 
 def fit_image_in_cell(

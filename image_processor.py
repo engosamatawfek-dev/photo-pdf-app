@@ -95,15 +95,24 @@ def create_preview(
     canvas = Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
 
     photos_to_draw = images[: layout.capacity]
+    leftover = len(photos_to_draw) % layout.cols
 
     for idx, img in enumerate(photos_to_draw):
         col = idx % layout.cols
         row = idx // layout.cols
 
+        # Span the last photo across the full row when it would otherwise sit alone
+        col_span = (
+            layout.cols
+            if (idx == len(photos_to_draw) - 1 and leftover == 1 and layout.cols > 1)
+            else 1
+        )
+
         cell: CellRect = calculate_cell_rect(
             page_w_mm, page_h_mm,
             layout.cols, layout.rows,
             padding_mm, col, row,
+            col_span,
         )
 
         # Shrink cell from center when photo_scale < 1.0
