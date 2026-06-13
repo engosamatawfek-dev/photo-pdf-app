@@ -25,6 +25,7 @@ from layout_calculator import (
     GridLayout,
     PAGE_SIZES,
     calculate_cell_rect,
+    cover_crop_box,
     fit_image_in_cell,
 )
 
@@ -81,12 +82,16 @@ def create_preview(
     padding_mm: float,
     photo_scale: float = 1.0,
     preview_width_px: int = 640,
-    cells: list[CellRect] | None = None,
+    cover_fit: bool = False,
+    photo_scales: list[float] | None = None,
 ) -> Image.Image:
     """
-    Render a low-resolution composite image of the PDF layout for st.image() preview.
-    photo_scale (0.5–1.0): 1.0 = fill cell, <1.0 = shrink photo from center.
-    cells: pre-computed per-photo CellRects (Smart layout); if None uses fixed grid.
+    Render a composite image of the PDF layout for st.image() preview.
+
+    cover_fit=False: contain fit — white space may appear at cell edges.
+    cover_fit=True: cover fit — image fills cell completely, center-cropped.
+    photo_scale: global scale (0.5–1.0) when photo_scales is None.
+    photo_scales: per-photo scale list (MANUAL preset); overrides photo_scale.
     Returns a white RGB PIL Image.
     """
     page_w_mm, page_h_mm = PAGE_SIZES[page_size]
@@ -96,52 +101,64 @@ def create_preview(
 
     canvas = Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
 
-    if cells is not None:
-        photos_to_draw = images[: len(cells)]
-    else:
-        photos_to_draw = images[: layout.capacity]
-        leftover = len(photos_to_draw) % layout.cols
+    photos_to_draw = images[: layout.capacity]
+    leftover = len(photos_to_draw) % layout.cols
 
     for idx, img in enumerate(photos_to_draw):
-        if cells is not None:
-            cell = cells[idx]
+        col = idx % layout.cols
+        row = idx // layout.cols
+
+        # Span the last photo across the full row when it would otherwise sit alone
+        col_span = (
+            layout.cols
+            if (idx == len(photos_to_draw) - 1 and leftover == 1 and layout.cols > 1)
+            else 1
+        )
+
+        cell = calculate_cell_rect(
+            page_w_mm, page_h_mm,
+            layout.cols, layout.rows,
+            padding_mm, col, row,
+            col_span,
+        )
+
+        # Effective scale: per-photo (MANUAL) or global
+        s = photo_scales[idx] if photo_scales else photo_scale
+
+        if cover_fit:
+            if s < 1.0:
+                inset_w = cell.w_mm * (1 - s) / 2
+                inset_h = cell.h_mm * (1 - s) / 2
+                cell = CellRect(
+                    x_mm=cell.x_mm + inset_w,
+                    y_mm=cell.y_mm + inset_h,
+                    w_mm=cell.w_mm * s,
+                    h_mm=cell.h_mm * s,
+                )
+            crop_box = cover_crop_box(img.width, img.height, cell)
+            cropped = img.crop(crop_box)
+            px_x = int(cell.x_mm * scale)
+            px_y = int(cell.y_mm * scale)
+            px_w = max(1, int(cell.w_mm * scale))
+            px_h = max(1, int(cell.h_mm * scale))
+            resized = cropped.resize((px_w, px_h), Image.LANCZOS)
+            canvas.paste(resized, (px_x, px_y))
         else:
-            col = idx % layout.cols
-            row = idx // layout.cols
-
-            # Span the last photo across the full row when it would otherwise sit alone
-            col_span = (
-                layout.cols
-                if (idx == len(photos_to_draw) - 1 and leftover == 1 and layout.cols > 1)
-                else 1
-            )
-
-            cell = calculate_cell_rect(
-                page_w_mm, page_h_mm,
-                layout.cols, layout.rows,
-                padding_mm, col, row,
-                col_span,
-            )
-
-        # Shrink cell from center when photo_scale < 1.0
-        if photo_scale < 1.0:
-            inset_w = cell.w_mm * (1 - photo_scale) / 2
-            inset_h = cell.h_mm * (1 - photo_scale) / 2
-            cell = CellRect(
-                x_mm=cell.x_mm + inset_w,
-                y_mm=cell.y_mm + inset_h,
-                w_mm=cell.w_mm * photo_scale,
-                h_mm=cell.h_mm * photo_scale,
-            )
-
-        draw = fit_image_in_cell(img.width, img.height, cell)
-
-        px_x = int(draw.x_mm * scale)
-        px_y = int(draw.y_mm * scale)
-        px_w = max(1, int(draw.w_mm * scale))
-        px_h = max(1, int(draw.h_mm * scale))
-
-        resized = img.resize((px_w, px_h), Image.LANCZOS)
-        canvas.paste(resized, (px_x, px_y))
+            if s < 1.0:
+                inset_w = cell.w_mm * (1 - s) / 2
+                inset_h = cell.h_mm * (1 - s) / 2
+                cell = CellRect(
+                    x_mm=cell.x_mm + inset_w,
+                    y_mm=cell.y_mm + inset_h,
+                    w_mm=cell.w_mm * s,
+                    h_mm=cell.h_mm * s,
+                )
+            draw = fit_image_in_cell(img.width, img.height, cell)
+            px_x = int(draw.x_mm * scale)
+            px_y = int(draw.y_mm * scale)
+            px_w = max(1, int(draw.w_mm * scale))
+            px_h = max(1, int(draw.h_mm * scale))
+            resized = img.resize((px_w, px_h), Image.LANCZOS)
+            canvas.paste(resized, (px_x, px_y))
 
     return canvas

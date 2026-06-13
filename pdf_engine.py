@@ -16,6 +16,7 @@ from layout_calculator import (
     GridLayout,
     PAGE_SIZES,
     calculate_cell_rect,
+    cover_crop_box,
     fit_image_in_cell,
 )
 
@@ -26,13 +27,19 @@ def generate_pdf(
     page_size: str = "A4",
     padding_mm: float = 5.0,
     photo_scale: float = 1.0,
-    cells: list[CellRect] | None = None,
+    cover_fit: bool = False,
+    photo_scales: list[float] | None = None,
 ) -> bytes:
     """
     Generate a single-page PDF with images arranged in the given grid.
-    photo_scale (0.5–1.0): 1.0 = fill cell completely, <1.0 = shrink photo from center.
-    cells: pre-computed per-photo CellRects (Smart layout); if None uses fixed grid.
-    Returns raw PDF bytes ready for st.download_button(data=...).
+
+    cover_fit=False (default): contain fit — photo scaled to fit inside cell,
+        white space may appear when aspect ratios differ.
+    cover_fit=True (SMART/MANUAL): cover fit — photo scaled to fill cell
+        completely, center-cropped to remove overflow.
+    photo_scale: global scale applied when photo_scales is None; <1.0 adds
+        a uniform white border around every photo.
+    photo_scales: per-photo scale list (MANUAL preset); overrides photo_scale.
     """
     page_w_mm, page_h_mm = PAGE_SIZES[page_size]
 
@@ -41,50 +48,62 @@ def generate_pdf(
     pdf.set_auto_page_break(auto=False)
     pdf.add_page()
 
-    if cells is not None:
-        photos_to_draw = images[: len(cells)]
-    else:
-        photos_to_draw = images[: layout.capacity]
-        leftover = len(photos_to_draw) % layout.cols
+    photos_to_draw = images[: layout.capacity]
+    leftover = len(photos_to_draw) % layout.cols
 
     for idx, img in enumerate(photos_to_draw):
-        if cells is not None:
-            cell = cells[idx]
+        col = idx % layout.cols
+        row = idx // layout.cols
+
+        # Span the last photo across the full row when it would otherwise sit alone
+        col_span = (
+            layout.cols
+            if (idx == len(photos_to_draw) - 1 and leftover == 1 and layout.cols > 1)
+            else 1
+        )
+
+        cell = calculate_cell_rect(
+            page_w_mm, page_h_mm,
+            layout.cols, layout.rows,
+            padding_mm, col, row,
+            col_span,
+        )
+
+        # Effective scale: per-photo (MANUAL) or global
+        s = photo_scales[idx] if photo_scales else photo_scale
+
+        if cover_fit:
+            # Apply scale as inset, then cover-crop to fill the (possibly smaller) cell
+            if s < 1.0:
+                inset_w = cell.w_mm * (1 - s) / 2
+                inset_h = cell.h_mm * (1 - s) / 2
+                cell = CellRect(
+                    x_mm=cell.x_mm + inset_w,
+                    y_mm=cell.y_mm + inset_h,
+                    w_mm=cell.w_mm * s,
+                    h_mm=cell.h_mm * s,
+                )
+            crop_box = cover_crop_box(img.width, img.height, cell)
+            cropped = img.crop(crop_box)
+            buf = io.BytesIO()
+            cropped.save(buf, format="JPEG", quality=90)
+            buf.seek(0)
+            pdf.image(buf, x=cell.x_mm, y=cell.y_mm, w=cell.w_mm, h=cell.h_mm)
         else:
-            col = idx % layout.cols
-            row = idx // layout.cols
-
-            # Span the last photo across the full row when it would otherwise sit alone
-            col_span = (
-                layout.cols
-                if (idx == len(photos_to_draw) - 1 and leftover == 1 and layout.cols > 1)
-                else 1
-            )
-
-            cell = calculate_cell_rect(
-                page_w_mm, page_h_mm,
-                layout.cols, layout.rows,
-                padding_mm, col, row,
-                col_span,
-            )
-
-        # Shrink cell from center when photo_scale < 1.0
-        if photo_scale < 1.0:
-            inset_w = cell.w_mm * (1 - photo_scale) / 2
-            inset_h = cell.h_mm * (1 - photo_scale) / 2
-            cell = CellRect(
-                x_mm=cell.x_mm + inset_w,
-                y_mm=cell.y_mm + inset_h,
-                w_mm=cell.w_mm * photo_scale,
-                h_mm=cell.h_mm * photo_scale,
-            )
-
-        draw = fit_image_in_cell(img.width, img.height, cell)
-
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=90)
-        buf.seek(0)
-
-        pdf.image(buf, x=draw.x_mm, y=draw.y_mm, w=draw.w_mm, h=draw.h_mm)
+            # Contain fit: shrink cell inward then fit image (white space fills remainder)
+            if s < 1.0:
+                inset_w = cell.w_mm * (1 - s) / 2
+                inset_h = cell.h_mm * (1 - s) / 2
+                cell = CellRect(
+                    x_mm=cell.x_mm + inset_w,
+                    y_mm=cell.y_mm + inset_h,
+                    w_mm=cell.w_mm * s,
+                    h_mm=cell.h_mm * s,
+                )
+            draw = fit_image_in_cell(img.width, img.height, cell)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=90)
+            buf.seek(0)
+            pdf.image(buf, x=draw.x_mm, y=draw.y_mm, w=draw.w_mm, h=draw.h_mm)
 
     return bytes(pdf.output())

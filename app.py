@@ -16,9 +16,7 @@ from PIL import Image
 from image_processor import create_preview, load_and_validate, resize_to_max
 from layout_calculator import (
     MAX_PHOTOS,
-    PAGE_SIZES,
     PRESET_NAMES,
-    calculate_orientation_aware_cells,
     resolve_layout,
 )
 from pdf_engine import generate_pdf
@@ -55,6 +53,8 @@ if "pdf_bytes" not in st.session_state:
     st.session_state.pdf_bytes: bytes | None = None
 if "preview_img" not in st.session_state:
     st.session_state.preview_img: Image.Image | None = None
+if "photo_scales" not in st.session_state:
+    st.session_state.photo_scales: list[float] = []
 
 
 def _reset_output() -> None:
@@ -103,6 +103,7 @@ if uploaded_files:
             # Keep original orientation — EXIF already applied during load
             st.session_state.rotations = [0] * len(new_images)
             st.session_state.file_sig = current_sig
+            st.session_state.photo_scales = [1.0] * len(new_images)
             _reset_output()
 
     if st.session_state.images:
@@ -165,14 +166,18 @@ if st.session_state.images:
             step=1,
             on_change=_reset_output,
         )
-        photo_scale = st.slider(
-            "Photo size (%)",
-            min_value=50,
-            max_value=100,
-            value=100,
-            step=5,
-            on_change=_reset_output,
-        ) / 100
+        # Global photo size slider — hidden for MANUAL (each photo has its own slider)
+        if preset != "MANUAL":
+            photo_scale = st.slider(
+                "Photo size (%)",
+                min_value=50,
+                max_value=100,
+                value=100,
+                step=5,
+                on_change=_reset_output,
+            ) / 100
+        else:
+            photo_scale = 1.0
 
     custom_cols, custom_rows = 2, 3
     if preset == "Custom":
@@ -182,22 +187,41 @@ if st.session_state.images:
         with cr:
             custom_rows = st.number_input("Rows", min_value=1, max_value=6, value=3, on_change=_reset_output)
 
-    image_count = len(st.session_state.images)
+    image_count = min(len(st.session_state.images), MAX_PHOTOS)
     layout = resolve_layout(preset, image_count, int(custom_cols), int(custom_rows))
 
-    if image_count > layout.capacity:
+    if len(st.session_state.images) > layout.capacity:
         st.warning(
             f"This layout fits {layout.capacity} photos. "
-            f"Your last {image_count - layout.capacity} photo(s) will not appear."
+            f"Your last {len(st.session_state.images) - layout.capacity} photo(s) will not appear."
         )
 
-    # Pre-compute per-photo cells for Smart layout
-    smart_cells = None
-    if preset == "Smart":
-        page_w_mm, page_h_mm = PAGE_SIZES[page_size]
-        rotated_for_ar = _rotated_images()[:MAX_PHOTOS]
-        ars = [img.width / img.height for img in rotated_for_ar]
-        smart_cells = calculate_orientation_aware_cells(ars, page_w_mm, page_h_mm, float(padding_mm))
+    # SMART preset: cover-fit fills gaps automatically (no extra UI needed)
+    if preset == "SMART":
+        st.caption("SMART: photos automatically fill their slots — gaps are minimised by cropping to fit.")
+
+    # MANUAL preset: per-photo scale sliders
+    if preset == "MANUAL":
+        st.caption("MANUAL: adjust how much each photo fills its slot. 100% = fills slot completely.")
+        # Ensure photo_scales list is long enough
+        while len(st.session_state.photo_scales) < image_count:
+            st.session_state.photo_scales.append(1.0)
+        for i in range(image_count):
+            st.session_state.photo_scales[i] = st.slider(
+                f"Photo {i + 1} size (%)",
+                min_value=50,
+                max_value=100,
+                value=int(st.session_state.photo_scales[i] * 100),
+                step=5,
+                key=f"pscale_{i}",
+                on_change=_reset_output,
+            ) / 100
+
+    # Determine rendering mode
+    cover_fit = preset in ("SMART", "MANUAL")
+    photo_scales_for_engines = (
+        st.session_state.photo_scales[:image_count] if preset == "MANUAL" else None
+    )
 
 # ── STEP 3 — Preview ─────────────────────────────────────────────────────────
     st.divider()
@@ -211,7 +235,8 @@ if st.session_state.images:
                 page_size,
                 float(padding_mm),
                 photo_scale,
-                cells=smart_cells,
+                cover_fit=cover_fit,
+                photo_scales=photo_scales_for_engines,
             )
 
     st.image(
@@ -232,7 +257,8 @@ if st.session_state.images:
                 page_size,
                 float(padding_mm),
                 photo_scale,
-                cells=smart_cells,
+                cover_fit=cover_fit,
+                photo_scales=photo_scales_for_engines,
             )
 
     if st.session_state.pdf_bytes:

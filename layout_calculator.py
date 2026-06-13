@@ -44,7 +44,8 @@ PAGE_SIZES: dict[str, tuple[float, float]] = {
 # Ordered for display in the UI radio widget
 PRESET_NAMES: list[str] = [
     "Auto",
-    "Smart",
+    "SMART",
+    "MANUAL",
     "Single (1×1)",
     "Side by Side (2×1)",
     "Portrait Pair (1×2)",
@@ -98,9 +99,11 @@ def resolve_layout(
         cols, rows = _AUTO_MAP.get(capped, (2, 5))
         return GridLayout(f"Auto ({cols}×{rows})", cols, rows)
 
-    if preset_name == "Smart":
-        # Per-photo cells are computed separately; use a placeholder with capacity = image_count
-        return GridLayout("Smart", cols=1, rows=image_count)
+    if preset_name in ("SMART", "MANUAL"):
+        # Same grid as Auto — fitting mode is handled separately in the engines
+        capped = min(image_count, MAX_PHOTOS)
+        cols, rows = _AUTO_MAP.get(capped, (2, 5))
+        return GridLayout(preset_name, cols, rows)
 
     if preset_name == "Custom":
         cols = max(1, custom_cols)
