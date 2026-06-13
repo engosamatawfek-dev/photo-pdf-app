@@ -44,6 +44,7 @@ PAGE_SIZES: dict[str, tuple[float, float]] = {
 # Ordered for display in the UI radio widget
 PRESET_NAMES: list[str] = [
     "Auto",
+    "Smart",
     "Single (1×1)",
     "Side by Side (2×1)",
     "Portrait Pair (1×2)",
@@ -96,6 +97,10 @@ def resolve_layout(
         capped = min(image_count, MAX_PHOTOS)
         cols, rows = _AUTO_MAP.get(capped, (2, 5))
         return GridLayout(f"Auto ({cols}×{rows})", cols, rows)
+
+    if preset_name == "Smart":
+        # Per-photo cells are computed separately; use a placeholder with capacity = image_count
+        return GridLayout("Smart", cols=1, rows=image_count)
 
     if preset_name == "Custom":
         cols = max(1, custom_cols)
@@ -160,6 +165,77 @@ def fit_image_in_cell(
         draw_y = cell.y_mm
 
     return DrawRect(x_mm=draw_x, y_mm=draw_y, w_mm=draw_w, h_mm=draw_h)
+
+
+def _group_photos_into_rows(
+    aspect_ratios: list[float],
+    target_row_ar: float = 1.4,
+    max_per_row: int = 3,
+) -> list[list[int]]:
+    """
+    Greedy grouping: add photos to the current row until the cumulative
+    aspect-ratio sum exceeds target_row_ar or max_per_row is reached.
+    Preserves upload order.
+    """
+    rows: list[list[int]] = []
+    current: list[int] = []
+    current_sum = 0.0
+
+    for i, ar in enumerate(aspect_ratios):
+        if current and (current_sum + ar > target_row_ar or len(current) >= max_per_row):
+            rows.append(current)
+            current, current_sum = [i], ar
+        else:
+            current.append(i)
+            current_sum += ar
+
+    if current:
+        rows.append(current)
+    return rows
+
+
+def calculate_orientation_aware_cells(
+    aspect_ratios: list[float],
+    page_w_mm: float,
+    page_h_mm: float,
+    padding_mm: float,
+) -> list[CellRect]:
+    """
+    Smart layout: one CellRect per photo sized to match its aspect ratio.
+
+    Photos are grouped into rows (landscape photos alone, portrait photos
+    in pairs).  All rows share equal height.  Within each multi-photo row
+    widths are proportional to each photo's aspect ratio — so cells exactly
+    match their photo (no white space, no cropping needed).
+    Single-photo rows get a naturally sized cell centred on the page.
+    """
+    rows = _group_photos_into_rows(aspect_ratios)
+    n_rows = len(rows)
+    row_h = (page_h_mm - (n_rows + 1) * padding_mm) / n_rows
+
+    cells: list[CellRect | None] = [None] * len(aspect_ratios)
+
+    for row_idx, row_indices in enumerate(rows):
+        row_y = padding_mm + row_idx * (row_h + padding_mm)
+        n = len(row_indices)
+        avail_w = page_w_mm - (n + 1) * padding_mm
+
+        if n == 1:
+            # Single photo: natural width (ar × row_h), centred on page
+            ar = aspect_ratios[row_indices[0]]
+            w = min(ar * row_h, avail_w)
+            x = (page_w_mm - w) / 2
+            cells[row_indices[0]] = CellRect(x_mm=x, y_mm=row_y, w_mm=w, h_mm=row_h)
+        else:
+            # Multiple photos: widths proportional to aspect ratios
+            total_ar = sum(aspect_ratios[i] for i in row_indices)
+            x = padding_mm
+            for photo_idx in row_indices:
+                w = aspect_ratios[photo_idx] / total_ar * avail_w
+                cells[photo_idx] = CellRect(x_mm=x, y_mm=row_y, w_mm=w, h_mm=row_h)
+                x += w + padding_mm
+
+    return cells  # type: ignore[return-value]
 
 
 def cover_crop_box(img_w_px: int, img_h_px: int, cell: CellRect) -> tuple[int, int, int, int]:

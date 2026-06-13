@@ -81,10 +81,12 @@ def create_preview(
     padding_mm: float,
     photo_scale: float = 1.0,
     preview_width_px: int = 640,
+    cells: list[CellRect] | None = None,
 ) -> Image.Image:
     """
     Render a low-resolution composite image of the PDF layout for st.image() preview.
     photo_scale (0.5–1.0): 1.0 = fill cell, <1.0 = shrink photo from center.
+    cells: pre-computed per-photo CellRects (Smart layout); if None uses fixed grid.
     Returns a white RGB PIL Image.
     """
     page_w_mm, page_h_mm = PAGE_SIZES[page_size]
@@ -94,26 +96,32 @@ def create_preview(
 
     canvas = Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
 
-    photos_to_draw = images[: layout.capacity]
-    leftover = len(photos_to_draw) % layout.cols
+    if cells is not None:
+        photos_to_draw = images[: len(cells)]
+    else:
+        photos_to_draw = images[: layout.capacity]
+        leftover = len(photos_to_draw) % layout.cols
 
     for idx, img in enumerate(photos_to_draw):
-        col = idx % layout.cols
-        row = idx // layout.cols
+        if cells is not None:
+            cell = cells[idx]
+        else:
+            col = idx % layout.cols
+            row = idx // layout.cols
 
-        # Span the last photo across the full row when it would otherwise sit alone
-        col_span = (
-            layout.cols
-            if (idx == len(photos_to_draw) - 1 and leftover == 1 and layout.cols > 1)
-            else 1
-        )
+            # Span the last photo across the full row when it would otherwise sit alone
+            col_span = (
+                layout.cols
+                if (idx == len(photos_to_draw) - 1 and leftover == 1 and layout.cols > 1)
+                else 1
+            )
 
-        cell: CellRect = calculate_cell_rect(
-            page_w_mm, page_h_mm,
-            layout.cols, layout.rows,
-            padding_mm, col, row,
-            col_span,
-        )
+            cell = calculate_cell_rect(
+                page_w_mm, page_h_mm,
+                layout.cols, layout.rows,
+                padding_mm, col, row,
+                col_span,
+            )
 
         # Shrink cell from center when photo_scale < 1.0
         if photo_scale < 1.0:

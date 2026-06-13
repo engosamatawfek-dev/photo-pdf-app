@@ -14,7 +14,13 @@ import streamlit as st
 from PIL import Image
 
 from image_processor import create_preview, load_and_validate, resize_to_max
-from layout_calculator import MAX_PHOTOS, PRESET_NAMES, resolve_layout
+from layout_calculator import (
+    MAX_PHOTOS,
+    PAGE_SIZES,
+    PRESET_NAMES,
+    calculate_orientation_aware_cells,
+    resolve_layout,
+)
 from pdf_engine import generate_pdf
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -185,6 +191,14 @@ if st.session_state.images:
             f"Your last {image_count - layout.capacity} photo(s) will not appear."
         )
 
+    # Pre-compute per-photo cells for Smart layout
+    smart_cells = None
+    if preset == "Smart":
+        page_w_mm, page_h_mm = PAGE_SIZES[page_size]
+        rotated_for_ar = _rotated_images()[:MAX_PHOTOS]
+        ars = [img.width / img.height for img in rotated_for_ar]
+        smart_cells = calculate_orientation_aware_cells(ars, page_w_mm, page_h_mm, float(padding_mm))
+
 # ── STEP 3 — Preview ─────────────────────────────────────────────────────────
     st.divider()
     st.subheader("3 · Preview")
@@ -197,6 +211,7 @@ if st.session_state.images:
                 page_size,
                 float(padding_mm),
                 photo_scale,
+                cells=smart_cells,
             )
 
     st.image(
@@ -217,6 +232,7 @@ if st.session_state.images:
                 page_size,
                 float(padding_mm),
                 photo_scale,
+                cells=smart_cells,
             )
 
     if st.session_state.pdf_bytes:
