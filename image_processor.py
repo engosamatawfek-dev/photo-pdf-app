@@ -25,7 +25,7 @@ from layout_calculator import (
     GridLayout,
     PAGE_SIZES,
     calculate_cell_rect,
-    cover_crop_box,
+    fit_image_in_cell,
 )
 
 MAX_DIMENSION_PX = 1920
@@ -117,15 +117,14 @@ def create_preview(
                 h_mm=cell.h_mm * photo_scale,
             )
 
-        crop_box = cover_crop_box(img.width, img.height, cell)
-        cropped = img.crop(crop_box)
+        draw = fit_image_in_cell(img.width, img.height, cell)
 
-        px_x = int(cell.x_mm * scale)
-        px_y = int(cell.y_mm * scale)
-        px_w = max(1, int(cell.w_mm * scale))
-        px_h = max(1, int(cell.h_mm * scale))
+        px_x = int(draw.x_mm * scale)
+        px_y = int(draw.y_mm * scale)
+        px_w = max(1, int(draw.w_mm * scale))
+        px_h = max(1, int(draw.h_mm * scale))
 
-        resized = cropped.resize((px_w, px_h), Image.LANCZOS)
+        resized = img.resize((px_w, px_h), Image.LANCZOS)
         canvas.paste(resized, (px_x, px_y))
 
     return canvas

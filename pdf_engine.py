@@ -16,7 +16,7 @@ from layout_calculator import (
     GridLayout,
     PAGE_SIZES,
     calculate_cell_rect,
-    cover_crop_box,
+    fit_image_in_cell,
 )
 
 
@@ -64,13 +64,12 @@ def generate_pdf(
                 h_mm=cell.h_mm * photo_scale,
             )
 
-        crop_box = cover_crop_box(img.width, img.height, cell)
-        cropped = img.crop(crop_box)
+        draw = fit_image_in_cell(img.width, img.height, cell)
 
         buf = io.BytesIO()
-        cropped.save(buf, format="JPEG", quality=90)
+        img.save(buf, format="JPEG", quality=90)
         buf.seek(0)
 
-        pdf.image(buf, x=cell.x_mm, y=cell.y_mm, w=cell.w_mm, h=cell.h_mm)
+        pdf.image(buf, x=draw.x_mm, y=draw.y_mm, w=draw.w_mm, h=draw.h_mm)
 
     return bytes(pdf.output())
