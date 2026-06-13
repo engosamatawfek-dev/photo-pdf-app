@@ -194,6 +194,29 @@ def _group_photos_into_rows(
     return rows
 
 
+def _balance_rows(
+    rows: list[list[int]],
+    aspect_ratios: list[float],
+    max_per_row: int = 3,
+) -> list[list[int]]:
+    """
+    Merge a lone portrait photo at the end of the row list into the previous
+    row so it doesn't appear as a small centred thumbnail with large side gaps.
+    Only merges when the resulting row stays within max_per_row.
+    """
+    rows = [r[:] for r in rows]
+    while len(rows) > 1:
+        last = rows[-1]
+        is_lone_portrait = len(last) == 1 and aspect_ratios[last[0]] < 0.85
+        can_merge = len(rows[-2]) + 1 <= max_per_row
+        if is_lone_portrait and can_merge:
+            rows[-2] = rows[-2] + last
+            rows.pop()
+        else:
+            break
+    return rows
+
+
 def calculate_orientation_aware_cells(
     aspect_ratios: list[float],
     page_w_mm: float,
@@ -201,39 +224,59 @@ def calculate_orientation_aware_cells(
     padding_mm: float,
 ) -> list[CellRect]:
     """
-    Smart layout: one CellRect per photo sized to match its aspect ratio.
+    Smart justified layout: one CellRect per photo, no gaps, no cropping.
 
-    Photos are grouped into rows (landscape photos alone, portrait photos
-    in pairs).  All rows share equal height.  Within each multi-photo row
-    widths are proportional to each photo's aspect ratio — so cells exactly
-    match their photo (no white space, no cropping needed).
-    Single-photo rows get a naturally sized cell centred on the page.
+    Algorithm (same as Google Photos / Lightroom justified grid):
+    1. Group photos into rows by aspect-ratio sum (greedy).
+    2. Merge lone portrait at the end into the previous row.
+    3. Compute each row's "natural height" — the height at which that row's
+       photos exactly fill the page width at their own aspect ratios.
+    4. Scale all row heights uniformly so they fill the page height.
+    5. Within each multi-photo row, widths are proportional to aspect ratios
+       so every photo exactly matches its cell (no white space, no cropping).
+    6. Single-photo rows are centred at natural width.
     """
     rows = _group_photos_into_rows(aspect_ratios)
+    rows = _balance_rows(rows, aspect_ratios)
     n_rows = len(rows)
-    row_h = (page_h_mm - (n_rows + 1) * padding_mm) / n_rows
 
-    cells: list[CellRect | None] = [None] * len(aspect_ratios)
-
-    for row_idx, row_indices in enumerate(rows):
-        row_y = padding_mm + row_idx * (row_h + padding_mm)
+    # Natural height for each row: the height at which photos fill the full width
+    natural_heights: list[float] = []
+    for row_indices in rows:
         n = len(row_indices)
         avail_w = page_w_mm - (n + 1) * padding_mm
+        sum_ar = sum(aspect_ratios[i] for i in row_indices)
+        natural_heights.append(avail_w / sum_ar)
+
+    # Scale all rows together so total height fills the page
+    avail_h = page_h_mm - (n_rows + 1) * padding_mm
+    scale = avail_h / sum(natural_heights)
+    row_heights = [h * scale for h in natural_heights]
+
+    cells: list[CellRect | None] = [None] * len(aspect_ratios)
+    y = padding_mm
+
+    for row_idx, row_indices in enumerate(rows):
+        row_h = row_heights[row_idx]
+        n = len(row_indices)
+        avail_w = page_w_mm - (n + 1) * padding_mm
+        sum_ar = sum(aspect_ratios[i] for i in row_indices)
 
         if n == 1:
-            # Single photo: natural width (ar × row_h), centred on page
+            # Single photo: natural width at scaled height, centred horizontally
             ar = aspect_ratios[row_indices[0]]
             w = min(ar * row_h, avail_w)
             x = (page_w_mm - w) / 2
-            cells[row_indices[0]] = CellRect(x_mm=x, y_mm=row_y, w_mm=w, h_mm=row_h)
+            cells[row_indices[0]] = CellRect(x_mm=x, y_mm=y, w_mm=w, h_mm=row_h)
         else:
-            # Multiple photos: widths proportional to aspect ratios
-            total_ar = sum(aspect_ratios[i] for i in row_indices)
+            # Multiple photos: widths proportional to aspect ratios → fills full width
             x = padding_mm
             for photo_idx in row_indices:
-                w = aspect_ratios[photo_idx] / total_ar * avail_w
-                cells[photo_idx] = CellRect(x_mm=x, y_mm=row_y, w_mm=w, h_mm=row_h)
+                w = aspect_ratios[photo_idx] / sum_ar * avail_w
+                cells[photo_idx] = CellRect(x_mm=x, y_mm=y, w_mm=w, h_mm=row_h)
                 x += w + padding_mm
+
+        y += row_h + padding_mm
 
     return cells  # type: ignore[return-value]
 
